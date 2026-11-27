@@ -1,0 +1,107 @@
+name: Mozaiek bibliotheek
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'afbeeldingen/**'
+      - '.github/workflows/catalogus.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  publiceren:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+
+    steps:
+      - name: Bibliotheek ophalen
+        uses: actions/checkout@v4
+
+      - name: Catalogus genereren
+        run: |
+          python3 <<'PY'
+          import json
+          import shutil
+          import hashlib
+          from pathlib import Path
+          from urllib.parse import quote
+
+          root = Path("afbeeldingen")
+          output = Path("public")
+          output.mkdir(exist_ok=True)
+
+          namen = {
+              "halloween": "Halloween",
+              "puppies-kittens": "Puppies en kittens",
+              "landmarks": "Iconic landmarks",
+              "neon-patronen": "Neon patronen",
+              "sinterklaas": "Sinterklaas"
+          }
+
+          extensies = {".png", ".jpg", ".jpeg", ".webp"}
+          catalogus = {
+              "versie": 1,
+              "categorieen": []
+          }
+
+          for map in sorted(root.iterdir()):
+              if not map.is_dir():
+                  continue
+
+              categorie = {
+                  "id": map.name,
+                  "naam": namen.get(
+                      map.name,
+                      map.name.replace("-", " ").title()
+                  ),
+                  "afbeeldingen": []
+              }
+
+              for bestand in sorted(map.iterdir()):
+                  if not bestand.is_file():
+                      continue
+                  if bestand.suffix.lower() not in extensies:
+                      continue
+
+                  pad = bestand.as_posix()
+                  doel = output / bestand
+                  doel.parent.mkdir(parents=True, exist_ok=True)
+                  shutil.copy2(bestand, doel)
+
+                  categorie["afbeeldingen"].append({
+                      "id": hashlib.sha256(
+                          pad.encode("utf-8")
+                      ).hexdigest()[:24],
+                      "bestand": quote(pad, safe="/")
+                  })
+
+              if categorie["afbeeldingen"]:
+                  catalogus["categorieen"].append(categorie)
+
+          with open(output / "catalogus.json", "w", encoding="utf-8") as f:
+              json.dump(catalogus, f, ensure_ascii=False, indent=2)
+
+          print("Catalogus succesvol aangemaakt")
+          PY
+
+      - name: Pages configureren
+        uses: actions/configure-pages@v5
+
+      - name: Bibliotheek voorbereiden
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: public
+
+      - name: Bibliotheek publiceren
+        uses: actions/deploy-pages@v4
